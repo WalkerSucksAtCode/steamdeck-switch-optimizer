@@ -10,14 +10,28 @@ echo ""
 
 FREED=0
 format_bytes() {
-    local bytes=$1
-    if [ "$bytes" -ge 1073741824 ]; then
-        echo "$(echo "scale=1; $bytes / 1073741824" | bc) GB"
-    elif [ "$bytes" -ge 1048576 ]; then
-        echo "$(echo "scale=1; $bytes / 1048576" | bc) MB"
+    # Input is in KB (from du -sk)
+    local kb=${1:-0}
+    [ -z "$kb" ] && kb=0
+    if [ "$kb" -ge 1048576 ] 2>/dev/null; then
+        local mb=$((kb / 1024))
+        local whole=$((mb / 1024))
+        local frac=$(((mb % 1024) * 10 / 1024))
+        echo "${whole}.${frac} GB"
+    elif [ "$kb" -ge 1024 ] 2>/dev/null; then
+        local whole=$((kb / 1024))
+        local frac=$(((kb % 1024) * 10 / 1024))
+        echo "${whole}.${frac} MB"
     else
-        echo "$(echo "scale=0; $bytes / 1024" | bc) KB"
+        echo "${kb} KB"
     fi
+}
+
+# Safe byte counter — handles edge cases, uses -sk (KB) for portability
+safe_size() {
+    local result
+    result=$(du -sk "$1" 2>/dev/null | cut -f1)
+    echo "${result:-0}"
 }
 
 COMPAT_TOOLS="$HOME/.local/share/Steam/compatibilitytools.d"
@@ -37,10 +51,8 @@ if [ -d "$COMPAT_TOOLS" ]; then
     for proton_dir in "$COMPAT_TOOLS"/*/; do
         [ -d "$proton_dir" ] || continue
         proton_name=$(basename "$proton_dir")
-        size=$(du -sb "$proton_dir" 2>/dev/null | cut -f1)
         size_h=$(du -sh "$proton_dir" 2>/dev/null | cut -f1)
 
-        # Keep GE-Proton versions that are recent, ask about older ones
         echo "  Found: $proton_name ($size_h)"
     done
     echo ""
@@ -54,12 +66,12 @@ echo ""
 
 # === 2. SHADER CACHE (safe to delete — Steam regenerates) ===
 if [ -d "$SHADER_CACHE" ]; then
-    SIZE_BEFORE=$(du -sb "$SHADER_CACHE" 2>/dev/null | cut -f1)
+    SIZE_BEFORE=$(safe_size "$SHADER_CACHE")
     SIZE_H=$(du -sh "$SHADER_CACHE" 2>/dev/null | cut -f1)
     echo "--- Clearing shader cache ($SIZE_H) ---"
     echo "  (Safe — Steam regenerates these as you play)"
     rm -rf "${SHADER_CACHE:?}/"*
-    SIZE_AFTER=$(du -sb "$SHADER_CACHE" 2>/dev/null | cut -f1)
+    SIZE_AFTER=$(safe_size "$SHADER_CACHE")
     SAVED=$((SIZE_BEFORE - SIZE_AFTER))
     FREED=$((FREED + SAVED))
     echo "  ✅ Freed $(format_bytes $SAVED)"
@@ -70,14 +82,14 @@ echo ""
 
 # === 3. INCOMPLETE DOWNLOADS ===
 if [ -d "$DL_CACHE" ]; then
-    SIZE_BEFORE=$(du -sb "$DL_CACHE" 2>/dev/null | cut -f1)
+    SIZE_BEFORE=$(safe_size "$DL_CACHE")
     SIZE_H=$(du -sh "$DL_CACHE" 2>/dev/null | cut -f1)
 
-    if [ "$SIZE_BEFORE" -gt 10485760 ]; then  # only if >10MB
+    if [ "${SIZE_BEFORE:-0}" -gt 10240 ] 2>/dev/null; then  # only if >10MB (10*1024 KB)
         echo "--- Clearing incomplete downloads ($SIZE_H) ---"
         echo "  (Safe — these are partial/abandoned downloads)"
         rm -rf "${DL_CACHE:?}/"*
-        SIZE_AFTER=$(du -sb "$DL_CACHE" 2>/dev/null | cut -f1)
+        SIZE_AFTER=$(safe_size "$DL_CACHE")
         SAVED=$((SIZE_BEFORE - SIZE_AFTER))
         FREED=$((FREED + SAVED))
         echo "  ✅ Freed $(format_bytes $SAVED)"
@@ -103,9 +115,9 @@ if [ -d "$COMPATDATA" ]; then
         appid=$(basename "$appid_dir")
         # Check if this appid has a corresponding install
         if ! echo "$INSTALLED_IDS" | grep -qw "$appid" 2>/dev/null; then
-            size=$(du -sb "$appid_dir" 2>/dev/null | cut -f1)
+            size=$(safe_size "$appid_dir")
             size_h=$(du -sh "$appid_dir" 2>/dev/null | cut -f1)
-            ORPHAN_SIZE=$((ORPHAN_SIZE + size))
+            ORPHAN_SIZE=$((ORPHAN_SIZE + ${size:-0}))
             ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
             echo "  Orphaned: $appid ($size_h)"
         fi
@@ -132,9 +144,9 @@ echo ""
 
 # === 5. THUMBNAIL CACHE ===
 if [ -d ~/.cache/thumbnails ]; then
-    SIZE_BEFORE=$(du -sb ~/.cache/thumbnails 2>/dev/null | cut -f1)
+    SIZE_BEFORE=$(safe_size ~/.cache/thumbnails)
     SIZE_H=$(du -sh ~/.cache/thumbnails 2>/dev/null | cut -f1)
-    if [ "$SIZE_BEFORE" -gt 1048576 ]; then
+    if [ "${SIZE_BEFORE:-0}" -gt 1024 ] 2>/dev/null; then
         echo "--- Clearing thumbnail cache ($SIZE_H) ---"
         rm -rf ~/.cache/thumbnails/*
         FREED=$((FREED + SIZE_BEFORE))
@@ -163,7 +175,6 @@ echo ""
 
 # === 7. PACMAN CACHE (if writable) ===
 if [ -w /var/cache/pacman/pkg/ ]; then
-    SIZE_BEFORE=$(du -sb /var/cache/pacman/pkg/ 2>/dev/null | cut -f1)
     SIZE_H=$(du -sh /var/cache/pacman/pkg/ 2>/dev/null | cut -f1)
     echo "--- Clearing pacman cache ($SIZE_H) ---"
     sudo pacman -Sc --noconfirm 2>/dev/null
