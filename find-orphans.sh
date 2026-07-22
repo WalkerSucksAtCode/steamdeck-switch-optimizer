@@ -1,24 +1,59 @@
 #!/bin/bash
 # Cross-references installed Steam games against compatdata
-# Shows exactly which compatdata folders are orphaned and safe to delete
+# Scans ALL Steam library folders (internal + SD card + external)
 
-STEAMAPPS="$HOME/.local/share/Steam/steamapps"
-COMPATDATA="$STEAMAPPS/compatdata"
-TOTAL_ORPHAN_KB=0
+STEAM_HOME="$HOME/.local/share/Steam"
+COMPATDATA="$STEAM_HOME/steamapps/compatdata"
 
-echo "=== Installed Games (from appmanifests) ==="
-INSTALLED_IDS=""
-for manifest in "$STEAMAPPS"/appmanifest_*.acf; do
-    [ -f "$manifest" ] || continue
-    appid=$(grep -m1 '"appid"' "$manifest" | grep -o '[0-9]*')
-    name=$(grep -m1 '"name"' "$manifest" | sed 's/.*"name"[[:space:]]*"//; s/".*//')
-    INSTALLED_IDS="$INSTALLED_IDS $appid"
-    echo "  $appid: $name"
+# Parse all library folders from libraryfolders.vdf
+LIBRARY_FOLDERS=""
+if [ -f "$STEAM_HOME/steamapps/libraryfolders.vdf" ]; then
+    LIBRARY_FOLDERS=$(grep '"path"' "$STEAM_HOME/steamapps/libraryfolders.vdf" | sed 's/.*"path"[[:space:]]*"//; s/".*//')
+fi
+# Always include default
+LIBRARY_FOLDERS="$STEAM_HOME
+$LIBRARY_FOLDERS"
+
+echo "=== Scanning Steam Library Folders ===
+"
+echo "$LIBRARY_FOLDERS" | while read -r folder; do
+    [ -z "$folder" ] && continue
+    count=$(find "$folder/steamapps" -maxdepth 1 -name 'appmanifest_*.acf' 2>/dev/null | wc -l)
+    echo "  $folder ($count games)"
 done
 echo ""
 
+# Build complete list of installed app IDs from ALL libraries
+INSTALLED_IDS=""
+for folder in $LIBRARY_FOLDERS; do
+    [ -z "$folder" ] && continue
+    for manifest in "$folder/steamapps"/appmanifest_*.acf; do
+        [ -f "$manifest" ] || continue
+        appid=$(grep -m1 '"appid"' "$manifest" | grep -o '[0-9]*')
+        name=$(grep -m1 '"name"' "$manifest" | sed 's/.*"name"[[:space:]]*"//; s/".*//')
+        if [ -n "$appid" ]; then
+            INSTALLED_IDS="$INSTALLED_IDS $appid"
+        fi
+    done
+done
+
+echo "=== Installed Games ==="
+for folder in $LIBRARY_FOLDERS; do
+    [ -z "$folder" ] && continue
+    for manifest in "$folder/steamapps"/appmanifest_*.acf; do
+        [ -f "$manifest" ] || continue
+        appid=$(grep -m1 '"appid"' "$manifest" | grep -o '[0-9]*')
+        name=$(grep -m1 '"name"' "$manifest" | sed 's/.*"name"[[:space:]]*"//; s/".*//')
+        [ -n "$appid" ] && echo "  $appid: $name"
+    done
+done
+echo ""
+
+# Now check compatdata
 echo "=== Orphaned Compatdata (safe to delete) ==="
+TOTAL_ORPHAN_KB=0
 ORPHAN_COUNT=0
+
 for dir in "$COMPATDATA"/*/; do
     [ -d "$dir" ] || continue
     appid=$(basename "$dir")
@@ -29,28 +64,24 @@ for dir in "$COMPATDATA"/*/; do
         ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
         size_h=$(du -sh "$dir" 2>/dev/null | cut -f1)
         echo "  ❌ $appid ($size_h) — NOT INSTALLED"
+    else
+        size_h=$(du -sh "$dir" 2>/dev/null | cut -f1)
+        echo "  ✅ $appid ($size_h) — installed"
     fi
 done
 echo ""
 
-echo "=== Also Checking: .var (Flatpak data) ==="
-du -sh ~/.var/app/*/ 2>/dev/null | sort -rh | head -10
-echo ""
-
 echo "=== Summary ==="
 if [ "$ORPHAN_COUNT" -gt 0 ]; then
-    total_h=$(du -sh "$COMPATDATA" 2>/dev/null | cut -f1)
-    echo "Found $ORPHAN_COUNT orphaned compatdata entries"
-    echo "Total orphaned space:"
     if [ "$TOTAL_ORPHAN_KB" -ge 1048576 ] 2>/dev/null; then
-        echo "  $((TOTAL_ORPHAN_KB / 1048576)).$((TOTAL_ORPHAN_KB % 1048576 * 10 / 1048576)) GB"
+        echo "Found $ORPHAN_COUNT orphaned entries — $((TOTAL_ORPHAN_KB / 1048576)).$((TOTAL_ORPHAN_KB % 1048576 * 10 / 1048576)) GB reclaimable"
     elif [ "$TOTAL_ORPHAN_KB" -ge 1024 ] 2>/dev/null; then
-        echo "  $((TOTAL_ORPHAN_KB / 1024)).$((TOTAL_ORPHAN_KB % 1024 * 10 / 1024)) MB"
+        echo "Found $ORPHAN_COUNT orphaned entries — $((TOTAL_ORPHAN_KB / 1024)) MB reclaimable"
     else
-        echo "  ${TOTAL_ORPHAN_KB} KB"
+        echo "Found $ORPHAN_COUNT orphaned entries — ${TOTAL_ORPHAN_KB} KB reclaimable"
     fi
     echo ""
-    echo "=== COPY AND RUN THESE TO DELETE ORPHANS ==="
+    echo "=== RUN THESE TO DELETE ORPHANS ==="
     for dir in "$COMPATDATA"/*/; do
         [ -d "$dir" ] || continue
         appid=$(basename "$dir")
@@ -59,5 +90,5 @@ if [ "$ORPHAN_COUNT" -gt 0 ]; then
         fi
     done
 else
-    echo "✅ All compatdata matches installed games — nothing orphaned."
+    echo "✅ All compatdata matches installed games."
 fi
