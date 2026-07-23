@@ -75,7 +75,7 @@
     "sort_column_id": 0,
     "sort_ascending": false
   },
-  "game_dirs": ["/run/media/mmcblk0p1/Emulation/roms/switch"],
+  "game_dirs": ["/path/to/Emulation/roms/switch"],
   "autoload_dirs": [],
   "shown_file_types": {
     "nsp": true,
@@ -122,7 +122,7 @@
   },
   "rainbow_speed": 1,
   "graphics_backend": "Vulkan",
-  "preferred_gpu": "0x1002_0x163F",
+  "preferred_gpu": "",
   "multiplayer_mode": 0,
   "multiplayer_lan_interface_id": "0",
   "multiplayer_disable_p2p": false,
