@@ -30,9 +30,12 @@ chmod +x *.sh
 | `diagnostic.sh` | Emulation / firmware / keys report (paste output for help) |
 | `storage-diagnostic.sh` | What’s eating `/home` space |
 | `cleanup.sh` | Safe reclaim (`--apply` to delete; orphans never auto-deleted) |
-| `find-orphans.sh` | Compatdata vs `appmanifest_*.acf` across all Steam libraries |
+| `find-orphans.sh` | Compatdata vs manifests + Non-Steam shortcuts (all libraries) |
 | `steam-common.sh` | Shared Steam path / size helpers (sourced by other scripts) |
+| `tests/test-orphan-detection.sh` | Fixture test for multi-library + shortcut orphan logic |
 | `ryubing-config.json` | Reference Ryubing settings (sanitized — set `game_dirs` yourself) |
+
+Orphan detection treats **Non-Steam shortcuts** (EmuDeck/Ryubing entries, etc.) as installed by reading `userdata/*/config/shortcuts.vdf`, and scans `compatdata` / shader caches on **every** Steam library (internal + SD).
 
 Eden is optimized by patching `~/.config/eden/qt-config.ini` in place via `apply-configs.sh` (no separate INI in the repo).
 
