@@ -1,6 +1,5 @@
 #!/bin/bash
-# Steam Deck Switch Emulation — Diagnostic Report
-# Run on the Deck, paste output back to get specific recommendations
+# Print system / emu / keys snapshot (paste if asking for help).
 
 set -u
 
@@ -20,11 +19,9 @@ ini_get() {
     grep -E "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2-
 }
 
-echo "=========================================="
-echo "  Steam Deck Switch Emulation Diagnostic"
-echo "=========================================="
+echo "=== diagnostic ==="
 echo ""
-echo "--- System Info ---"
+echo "--- system ---"
 uname -a 2>/dev/null || true
 if [ -f /etc/os-release ]; then
     echo "SteamOS: $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2)"
@@ -136,12 +133,9 @@ echo ""
 
 echo "--- EmuDeck ---"
 if [ -d "$HOME/.config/EmuDeck" ] || [ -d "$HOME/emudeck" ] || [ -d "$HOME/Emulation" ]; then
-    echo "EmuDeck: likely installed"
+    echo "EmuDeck: yes"
 else
-    echo "EmuDeck: not found"
+    echo "EmuDeck: no"
 fi
 echo ""
-
-echo "=========================================="
-echo "  Copy everything above and paste it back"
-echo "=========================================="
+echo "=== end ==="

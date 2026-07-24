@@ -1,18 +1,15 @@
 #!/bin/bash
-# Steam Deck Storage Diagnostic — inspect before cleanup
-# Run on the Deck in Konsole
+# Disk usage before cleanup.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=steam-common.sh
 source "$SCRIPT_DIR/steam-common.sh"
 
-echo "=========================================="
-echo "  Steam Deck Storage Diagnostic"
-echo "  Steam: $STEAM_HOME"
-echo "=========================================="
+echo "=== storage ==="
+echo "steam: $STEAM_HOME"
 echo ""
 
-echo "--- Internal Storage (/home) ---"
+echo "--- /home ---"
 df -h /home 2>/dev/null | tail -1 || df -h "$HOME" | tail -1
 echo ""
 
@@ -46,7 +43,7 @@ ANY=0
 while IFS= read -r SC; do
     ANY=1
     TOTAL=$(du -sh "$SC" 2>/dev/null | cut -f1)
-    echo "$SC — total $TOTAL"
+    echo "$SC: $TOTAL"
     echo "  Top entries:"
     du -sh "$SC"/* 2>/dev/null | sort -rh | head -10 | sed 's/^/  /'
 done < <(list_shadercache_roots)
@@ -82,7 +79,7 @@ while IFS= read -r CD; do
     ANY=1
     TOTAL=$(du -sh "$CD" 2>/dev/null | cut -f1)
     count=$(find "$CD" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
-    echo "$CD — $TOTAL ($count prefixes)"
+    echo "$CD: $TOTAL ($count prefixes)"
 done < <(list_compatdata_roots)
 [ "$ANY" -eq 0 ] && echo "No compatdata."
 echo ""
@@ -95,9 +92,4 @@ echo "--- Thumbnail Cache ---"
 du -sh "$HOME/.cache/thumbnails" 2>/dev/null || echo "No thumbnail cache"
 echo ""
 
-echo "=========================================="
-echo "  Review the above, then:"
-echo "    ./cleanup.sh           # dry-run"
-echo "    ./cleanup.sh --apply   # reclaim safe caches"
-echo "    ./find-orphans.sh      # orphaned compatdata"
-echo "=========================================="
+echo "Next: ./cleanup.sh | ./cleanup.sh --apply | ./find-orphans.sh"

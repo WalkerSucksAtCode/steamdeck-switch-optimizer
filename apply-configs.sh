@@ -1,30 +1,35 @@
 #!/bin/bash
-# Steam Deck Switch Emulation Config Optimizer
-# Run this on the Steam Deck in Desktop Mode via Konsole
-# Backs up existing configs and applies optimized versions
+# Backup + patch Ryubing/Eden configs for Steam Deck.
 
 set -euo pipefail
 
-echo "=== Steam Deck Switch Emulation Optimizer ==="
+# Portable in-place sed (GNU on Deck, BSD on macOS).
+sed_inplace() {
+    local file=$1
+    shift
+    local tmp
+    tmp=$(mktemp)
+    sed "$@" "$file" >"$tmp"
+    mv "$tmp" "$file"
+}
+
+echo "=== apply-configs ==="
 echo ""
 
 BACKUP_DIR="$HOME/.config/emulation-backups-$(date +%Y%m%d%H%M%S)"
 mkdir -p "$BACKUP_DIR"
-echo "Backups will be saved to: $BACKUP_DIR"
+echo "Backup: $BACKUP_DIR"
 echo ""
 
 CHANGED=0
 
-# === RYUBING ===
 RYU_CONFIG="$HOME/.config/Ryujinx/Config.json"
 RYU_GAMES_DIR="$HOME/.config/Ryujinx/games"
 
 if [ -f "$RYU_CONFIG" ]; then
-    echo "--- Backing up Ryubing/Ryujinx config ---"
+    echo "--- Ryubing ---"
     cp "$RYU_CONFIG" "$BACKUP_DIR/Config.json.bak"
     CHANGED=1
-
-    echo "--- Applying Ryubing optimizations ---"
 
     if command -v jq &>/dev/null; then
         tmp=$(mktemp)
@@ -46,17 +51,15 @@ if [ -f "$RYU_CONFIG" ]; then
         ' "$RYU_CONFIG" > "$tmp" \
             && jq empty "$tmp" 2>/dev/null \
             && mv "$tmp" "$RYU_CONFIG"; then
-            echo "Ryubing config optimized via jq"
+            echo "patched (jq)"
         else
-            echo "ERROR: jq patch failed — original left intact (backup in $BACKUP_DIR)" >&2
+            echo "ERROR: jq patch failed; original unchanged. Backup: $BACKUP_DIR" >&2
             rm -f "$tmp"
             exit 1
         fi
     else
-        echo "jq not found, using sed fallback (subset of settings)..."
-
-        # GNU sed -i on Steam Deck; avoid creating empty suffix backup
-        sed -i \
+        echo "jq missing; sed fallback (fewer keys)"
+        sed_inplace "$RYU_CONFIG" \
             -e 's/"tick_scalar": [0-9]*/"tick_scalar": 150/' \
             -e 's/"enable_low_power_ptc": false/"enable_low_power_ptc": true/' \
             -e 's/"docked_mode": true/"docked_mode": false/' \
@@ -67,29 +70,24 @@ if [ -f "$RYU_CONFIG" ]; then
             -e 's/"logging_enable_info": true/"logging_enable_info": false/' \
             -e 's/"logging_enable_guest": true/"logging_enable_guest": false/' \
             -e 's/"check_updates_on_start": true/"check_updates_on_start": false/' \
-            -e 's/"hide_cursor": [0-9]*/"hide_cursor": 1/' \
-            "$RYU_CONFIG"
-
-        echo "Ryubing config optimized via sed"
+            -e 's/"hide_cursor": [0-9]*/"hide_cursor": 1/'
+        echo "patched (sed)"
     fi
 else
-    echo "Ryubing/Ryujinx config not found at $RYU_CONFIG"
-    echo "  Make sure Ryubing is installed and has been run at least once."
+    echo "Ryubing config missing: $RYU_CONFIG"
+    echo "  Install/run Ryubing once first."
 fi
 
 echo ""
 
-# === EDEN ===
 EDEN_CONFIG="$HOME/.config/eden/qt-config.ini"
 
 if [ -f "$EDEN_CONFIG" ]; then
-    echo "--- Backing up Eden config ---"
+    echo "--- Eden ---"
     cp "$EDEN_CONFIG" "$BACKUP_DIR/qt-config.ini.bak"
     CHANGED=1
 
-    echo "--- Applying Eden optimizations ---"
-
-    sed -i \
+    sed_inplace "$EDEN_CONFIG" \
         -e 's/^resolution_setup=[0-9]*/resolution_setup=1/' \
         -e 's/^resolution_setup\\default=.*/resolution_setup\\default=false/' \
         -e 's/^fsr_sharpening_slider=[0-9]*/fsr_sharpening_slider=40/' \
@@ -97,54 +95,47 @@ if [ -f "$EDEN_CONFIG" ]; then
         -e 's/^force_max_clock=false/force_max_clock=true/' \
         -e 's/^force_max_clock\\default=.*/force_max_clock\\default=false/' \
         -e 's/^use_asynchronous_shaders=false/use_asynchronous_shaders=true/' \
-        -e 's/^use_asynchronous_shaders\\default=.*/use_asynchronous_shaders\\default=false/' \
-        "$EDEN_CONFIG"
+        -e 's/^use_asynchronous_shaders\\default=.*/use_asynchronous_shaders\\default=false/'
 
-    echo "Eden config optimized"
+    echo "patched"
 else
-    echo "Eden config not found at $EDEN_CONFIG"
-    echo "  (Fine if you only use Ryubing)"
+    echo "Eden config missing: $EDEN_CONFIG (ok if Ryubing-only)"
 fi
 
 echo ""
-
-echo "--- Steam Deck Power Tips ---"
-echo "For best battery life with Switch games:"
-echo "  Game Mode → game Properties → Power Management"
-echo "  Set TDP Limit to 10-13W for Pokemon games"
-echo "  (Stock is 15W — Pokemon often doesn't need full power)"
+echo "--- PowerTools / TDP ---"
+echo "  SMT off, GPU 1200 MHz (Decky PowerTools)"
+echo "  Lower TDP for battery (stock 15W is often more than needed)"
 echo ""
 
-echo "--- Shader Cache Status ---"
+echo "--- Ryubing shader caches ---"
 if [ -d "$RYU_GAMES_DIR" ]; then
     shopt -s nullglob
     caches=("$RYU_GAMES_DIR"/*/)
     if [ ${#caches[@]} -eq 0 ]; then
-        echo "  No per-game cache folders yet."
+        echo "  none yet"
     else
         for dir in "${caches[@]}"; do
             title_id=$(basename "$dir")
             cache_size=$(du -sh "${dir}cache/" 2>/dev/null | cut -f1 || true)
             if [ -n "${cache_size:-}" ]; then
-                echo "  $title_id: ${cache_size} shader cache"
+                echo "  $title_id: $cache_size"
             fi
         done
     fi
     shopt -u nullglob
 else
-    echo "  No Ryubing game cache directory found yet."
-    echo "  Shader caches build up as you play — first session will stutter."
+    echo "  no games/ cache dir (first session will stutter)"
 fi
 
 echo ""
 if [ "$CHANGED" -eq 0 ]; then
     rmdir "$BACKUP_DIR" 2>/dev/null || true
-    echo "=== Nothing to optimize (no configs found) ==="
+    echo "=== no configs found ==="
 else
-    echo "=== Optimization complete ==="
-    echo "Backups saved to: $BACKUP_DIR"
-    echo ""
-    echo "If anything breaks, restore with:"
+    echo "=== done ==="
+    echo "Backup: $BACKUP_DIR"
+    echo "Restore:"
     [ -f "$BACKUP_DIR/Config.json.bak" ] && \
         echo "  cp \"$BACKUP_DIR/Config.json.bak\" ~/.config/Ryujinx/Config.json"
     [ -f "$BACKUP_DIR/qt-config.ini.bak" ] && \

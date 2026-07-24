@@ -1,93 +1,93 @@
-# Steam Deck Switch Emulation — Optimized Configs
+# Steam Deck Switch optimizer
 
-Based on EmuDeck defaults + community best practices for **Ryubing** (Ryujinx fork) and **Eden** on Steam Deck.
+Patches Ryubing / Eden configs on Steam Deck. Cleans Steam leftover caches.
 
-## Quick start (on the Deck, Desktop Mode)
+Not an installer. You need EmuDeck (or an AppImage), keys, and firmware.
+
+Sources: [docs/verified-optimizations.md](docs/verified-optimizations.md)
+
+## Use (Desktop Mode)
 
 ```bash
 git clone https://github.com/WalkerSucksAtCode/steamdeck-switch-optimizer.git
 cd steamdeck-switch-optimizer
 chmod +x *.sh
 
-# See current emulator / system state
+./gui.sh                 # menu (zenity or kdialog)
 ./diagnostic.sh
-
-# Backup + patch Ryubing/Eden configs in place
-./apply-configs.sh
-
-# Storage: inspect first, then reclaim
+./apply-configs.sh       # backup + patch (tables below)
 ./storage-diagnostic.sh
-./cleanup.sh              # dry-run (default)
-./cleanup.sh --apply      # delete safe caches (shader, incomplete downloads, thumbnails)
-./find-orphans.sh         # list orphaned Steam compatdata + paste-ready rm commands
+./cleanup.sh             # dry-run
+./cleanup.sh --apply
+./find-orphans.sh
 ```
 
-## Files
-
-| File | Purpose |
-|---|---|
-| `apply-configs.sh` | Backs up and patches live Ryubing/Eden configs |
-| `diagnostic.sh` | Emulation / firmware / keys report (paste output for help) |
-| `storage-diagnostic.sh` | What’s eating `/home` space |
-| `cleanup.sh` | Safe reclaim (`--apply` to delete; orphans never auto-deleted) |
-| `find-orphans.sh` | Compatdata vs manifests + Non-Steam shortcuts (all libraries) |
-| `steam-common.sh` | Shared Steam path / size helpers (sourced by other scripts) |
-| `tests/test-orphan-detection.sh` | Fixture test for multi-library + shortcut orphan logic |
-| `ryubing-config.json` | Reference Ryubing settings (sanitized — set `game_dirs` yourself) |
-
-Orphan detection treats **Non-Steam shortcuts** (EmuDeck/Ryubing entries, etc.) as installed by reading `userdata/*/config/shortcuts.vdf`, and scans `compatdata` / shader caches on **every** Steam library (internal + SD).
-
-Eden is optimized by patching `~/.config/eden/qt-config.ini` in place via `apply-configs.sh` (no separate INI in the repo).
+Backups: `~/.config/emulation-backups-<timestamp>/`  
+GUI log: `/tmp/steamdeck-switch-optimizer.log` (or `$TMPDIR`)
 
 ## What `apply-configs.sh` changes
 
+Patches keys in place. Does not replace the whole file. “From” = typical EmuDeck / first-run defaults.
+
 ### Ryubing (`~/.config/Ryujinx/Config.json`)
 
-| Setting | EmuDeck-ish default | Optimized | Why |
+| Setting | Controls | From → To | Why |
 |---|---|---|---|
-| `tick_scalar` | 200 | 150 | Less aggressive; helps audio crackling in Pokemon |
-| `docked_mode` | false | false | Handheld 720p fits the Deck screen |
-| `enable_ptc` | true | true | Profiled Translation Cache |
-| `enable_low_power_ptc` | false | **true** | Lower CPU use / better battery |
-| `enable_vsync` | false | false | Uncapped |
-| `enable_texture_recompression` | false | false | Deck has enough RAM |
+| `docked_mode` | Docked (about 1080p) vs handheld (about 720p) | `false` → `false` | Deck panel is about 800p; docked costs GPU for nothing |
+| `enable_ptc` | Persist translated CPU code | `true` → `true` | After 2–3 full runs, later loads skip most ARM→x86 work |
+| `enable_low_power_ptc` | PTC with fewer translator threads | `false` → `true` | Slower cache build; less CPU / better battery |
+| `enable_shader_cache` | Persist GPU shaders | `true` → `true` | Less stutter after first session |
+| `tick_scalar` | Guest timing catch-up | `200` → `150` | Milder timing; can fix audio glitches |
+| `enable_vsync` | Cap to refresh | `false` → `false` | Uncapped FPS; set true if tearing |
+| `enable_texture_recompression` | Re-encode textures | `false` → `false` | Deck has RAM; costs CPU/GPU |
+| `memory_manager_mode` | Guest memory mapping | (varies) → `HostMappedUnsafe` | Faster on Linux; revert on weird crashes |
+| `enable_macro_hle` | HLE for GPU macros | (varies) → `true` | Skips some low-level GPU work |
+| `audio_backend` | Host audio | (varies) → `SDL3` | Works on SteamOS |
+| `logging_enable_info` / `_guest` | Verbose logs | often `true` → `false` | Less I/O |
+| `check_updates_on_start` | Update prompt | often `true` → `false` | Less Game Mode noise |
+| `hide_cursor` | Mouse cursor | (varies) → `1` | Hidden in play |
 
-Also: quieter logging, no update check on start, hide cursor, SDL3 audio, `HostMappedUnsafe` memory mode.
+Use Vulkan in the emu GUI. OpenGL for black screens / bad textures.
 
 ### Eden (`~/.config/eden/qt-config.ini`)
 
-| Setting | Typical default | Optimized | Why |
+| Setting | Controls | From → To | Why |
 |---|---|---|---|
-| `resolution_setup` | 2 | **1** (0.5× handheld) | Trade res for FPS in heavy titles |
-| `scaling_filter` | 5 (FSR) | **5** (FSR) | Looks good at low internal res |
-| `fsr_sharpening_slider` | 25 | **40** | Slightly sharper to compensate |
-| `use_asynchronous_shaders` | true | true | Avoids compile freezes |
-| `use_vsync` | 2 (Mailbox) | **2** | Latency / tear tradeoff |
-| `force_max_clock` | false | **true** | Reduces throttling stutter |
+| `resolution_setup` | Internal res scale | `2` → `1` (0.5× handheld) | FPS over sharpness; use with FSR |
+| `fsr_sharpening_slider` | FSR sharpen | `25` → `40` | Edge detail after lower res |
+| `force_max_clock` | Hold max GPU clock | `false` → `true` | Less throttle stutter |
+| `use_asynchronous_shaders` | Background shader compile | often `false` → `true` | Avoids main-thread freezes |
 
-Backups go to `~/.config/emulation-backups-<timestamp>/`. Restore with:
+Not patched: `scaling_filter=5` (FSR), `use_vsync=2` (Mailbox).
+
+## PowerTools (Game Mode)
+
+- SMT off
+- GPU clock 1200 MHz
+- Lower TDP for battery (stock 15W is often high)
+
+First sessions stutter while caches build.
+
+## Tools
+
+| Script | Does |
+|---|---|
+| `gui.sh` | Menu (zenity or kdialog) |
+| `apply-configs.sh` | Tables above |
+| `diagnostic.sh` | System / emu / keys |
+| `storage-diagnostic.sh` / `cleanup.sh` | Disk report / safe wipe (orphans never auto-deleted) |
+| `find-orphans.sh` | Compatdata vs manifests + Non-Steam shortcuts |
+| `ryubing-config.json` | Reference config (set `game_dirs`) |
+
+Helpers: `steam-common.sh`. Test: `tests/test-orphan-detection.sh`.
+
+## Restore
 
 ```bash
 cp ~/.config/emulation-backups-TIMESTAMP/Config.json.bak ~/.config/Ryujinx/Config.json
 cp ~/.config/emulation-backups-TIMESTAMP/qt-config.ini.bak ~/.config/eden/qt-config.ini
 ```
 
-## Pokemon Scarlet notes
-
-- **Ryubing is the safer choice for Scarlet** — better compatibility with Game Freak’s engine.
-- First ~30 minutes = shader compilation stutter; normal, then smoother.
-- Power tip: Game Mode → game Properties → Power Management → TDP **10–13W** (stock 15W is often more than needed).
-
-## Manual edit fallback
-
-If you prefer not to run the script:
-
-```bash
-cp ~/.config/Ryujinx/Config.json ~/.config/Ryujinx/Config.json.bak
-cp ~/.config/eden/qt-config.ini ~/.config/eden/qt-config.ini.bak 2>/dev/null
-# then edit with nano, or copy values from ryubing-config.json
-```
-
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

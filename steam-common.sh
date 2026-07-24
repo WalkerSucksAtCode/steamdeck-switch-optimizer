@@ -74,7 +74,7 @@ _collect_shortcut_appids() {
     [ "${#files[@]}" -gt 0 ] || return 0
 
     if ! command -v python3 >/dev/null 2>&1; then
-        echo "warning: python3 not found — Non-Steam shortcuts won't be treated as installed" >&2
+        echo "warning: no python3; Non-Steam shortcuts ignored" >&2
         return 0
     fi
 
